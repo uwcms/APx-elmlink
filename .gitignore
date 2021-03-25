@@ -1,0 +1,4 @@
+*.o
+*.rpm
+elmlinkd
+elmlink-lowlevel-send

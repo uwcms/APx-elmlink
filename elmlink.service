@@ -1,0 +1,12 @@
+[Unit]
+Description=IPMC-ELM Link Service
+Wants=sysmap-uio-config.service
+After=sysmap-uio-config.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/elmlinkd $UART $BAUD
+EnvironmentFile=/etc/elmlink.conf
+
+[Install]
+WantedBy=multi-user.target
