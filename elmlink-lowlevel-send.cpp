@@ -1,3 +1,4 @@
+#include "baudparse.h"
 #include "elmlink_protocol.h"
 #include "tty_noncanonical.h"
 #include <fcntl.h>
@@ -22,16 +23,14 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
-	std::string uart_baud_str = argv[2];
-	int baud_flag = 0;
-	if (uart_baud_str == "9600")
-		baud_flag = B9600;
-	else if (uart_baud_str == "19200")
-		baud_flag = B19200;
-	else if (uart_baud_str == "115200")
-		baud_flag = B115200;
-	else {
-		printf("Baud rate must be 9600, 19200 or 115200.\n");
+	BaudRate baud = BaudRate::find_setting(argv[2]);
+	if (baud.rate == 0) {
+		printf("Baud rate \"%s\" not supported.\n", argv[2]);
+		printf("\n");
+		printf("I support:");
+		for (auto setting : BaudRate::baud_settings)
+			printf(" %d", setting.rate);
+		printf("\n");
 		return 1;
 	}
 
@@ -40,7 +39,7 @@ int main(int argc, char *argv[]) {
 		perror("Failed to open serial endpoint\n");
 		return 1;
 	}
-	tty_set_noncannonical(uartfd, baud_flag, 0, NULL);
+	tty_set_noncannonical(uartfd, baud.flag, 0, NULL);
 
 	// We now have the UART socket set up.
 

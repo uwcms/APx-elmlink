@@ -4,10 +4,10 @@ all: build
 
 build: elmlinkd elmlink-lowlevel-send
 
-elmlinkd: elmlinkd.o elmlink_protocol.o crc32.o base64.o tty_noncanonical.o
+elmlinkd: elmlinkd.o elmlink_protocol.o crc32.o base64.o tty_noncanonical.o baudparse.o
 	$(CXX) $(CFLAGS) -o $@ $^
 
-elmlink-lowlevel-send: elmlink-lowlevel-send.o elmlink_protocol.o crc32.o base64.o tty_noncanonical.o
+elmlink-lowlevel-send: elmlink-lowlevel-send.o elmlink_protocol.o crc32.o base64.o tty_noncanonical.o baudparse.o
 	$(CXX) $(CFLAGS) -o $@ $^
 
 %.o: %.cpp

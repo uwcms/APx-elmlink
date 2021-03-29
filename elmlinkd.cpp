@@ -1,3 +1,4 @@
+#include "baudparse.h"
 #include "elmlink_protocol.h"
 #include "tty_noncanonical.h"
 #include <dirent.h>
@@ -48,7 +49,7 @@
  * Use of config.baud here will result in backpressure after more than 1
  * physical second of data is enqueued.
  */
-#define MAX_UART_SENDBUF (config.baud) // bytes
+#define MAX_UART_SENDBUF (config.baud.rate) // bytes
 
 // This channel ID will be used to request and receive the channel index.
 #define CHANNEL_INDEX_CHANNEL 0
@@ -133,9 +134,9 @@ class Configuration {
 public:
 	std::string uartpath;
 	int uartfd;
-	unsigned int baud;
+	BaudRate baud;
 	std::map<uint8_t, std::shared_ptr<Channel>> channels;
-	Configuration() : uartfd(-1), baud(0){};
+	Configuration() : uartfd(-1){};
 };
 
 void sync_available_channels(Configuration &config, const std::map<uint8_t, std::string> &channel_index) {
@@ -144,7 +145,7 @@ void sync_available_channels(Configuration &config, const std::map<uint8_t, std:
 
 	FILE *indexfile = fopen((std::string(CHANNEL_SOCKET_DIR) + "/.index~").c_str(), "w");
 	if (indexfile >= 0)
-		fprintf(indexfile, "UART %s %d\n", config.uartpath.c_str(), config.baud);
+		fprintf(indexfile, "UART %s %d\n", config.uartpath.c_str(), config.baud.rate);
 	for (auto channel_data : channel_index) {
 		if (channel_data.first == CHANNEL_INDEX_CHANNEL)
 			continue; // This one doesn't get instantiated.
@@ -220,22 +221,14 @@ int main(int argc, char *argv[]) {
 	if (realpath(argv[1], resolved_uartpath))
 		config.uartpath = resolved_uartpath;
 
-	std::string uart_baud_str = argv[2];
-	int baud_flag = 0;
-	if (uart_baud_str == "9600") {
-		baud_flag = B9600;
-		config.baud = 9600;
-	}
-	else if (uart_baud_str == "19200") {
-		baud_flag = B19200;
-		config.baud = 19200;
-	}
-	else if (uart_baud_str == "115200") {
-		baud_flag = B115200;
-		config.baud = 115200;
-	}
-	else {
-		printf("Baud rate must be 9600, 19200 or 115200.\n");
+	config.baud = BaudRate::find_setting(argv[2]);
+	if (config.baud.rate == 0) {
+		printf("Baud rate \"%s\" not supported.\n", argv[2]);
+		printf("\n");
+		printf("I support:");
+		for (auto setting : BaudRate::baud_settings)
+			printf(" %d", setting.rate);
+		printf("\n");
 		return 1;
 	}
 
@@ -246,7 +239,7 @@ int main(int argc, char *argv[]) {
 		perror("Failed to open serial endpoint\n");
 		return 1;
 	}
-	tty_set_noncannonical(config.uartfd, baud_flag, 0, NULL);
+	tty_set_noncannonical(config.uartfd, config.baud.flag, 0, NULL);
 
 	// We now have the UART socket set up.
 
@@ -331,8 +324,8 @@ int main(int argc, char *argv[]) {
              * of blocking if it comes to that.
 			 */
 			size_t write_size = send_buffer.size();
-			if (write_size > config.baud / 100)
-				write_size = config.baud / 100;
+			if (write_size > config.baud.rate / 100)
+				write_size = config.baud.rate / 100;
 			int rv = write(config.uartfd, send_buffer.data(), write_size);
 			if (rv > 0)
 				send_buffer.erase(0, rv);
