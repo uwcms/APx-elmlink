@@ -1,0 +1,11 @@
+# Files in this directory should be named identical to the socket they manage.
+#
+# These files can contain any number of lines which start with '#' or are blank.
+#
+# They should contain one line which provides a user name (not id), group name
+# (not id), and mode (octal only), in the following manner:
+#
+# root wheel 0770
+#
+# This will define the permissions set by the ELMLink daemon when a matching
+# socket is created.

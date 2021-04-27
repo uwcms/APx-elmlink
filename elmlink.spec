@@ -35,6 +35,8 @@ install -D -m 0755 elmlinkd %{buildroot}/%{_bindir}/elmlinkd
 install -D -m 0755 elmlink-lowlevel-send %{buildroot}/%{_libexecdir}/elmlink-lowlevel-send
 install -D -m 0644 elmlink.service %{buildroot}/%{_unitdir}/elmlink.service
 install -D -m 0644 elmlink.conf %{buildroot}/%{_sysconfdir}/elmlink.conf
+install -d -m 0755 %{buildroot}/%{_sysconfdir}/elmlink.permissions.d
+install -D -m 0644 permissions.README %{buildroot}/%{_sysconfdir}/elmlink.permissions.d/README
 
 
 %files
@@ -42,6 +44,8 @@ install -D -m 0644 elmlink.conf %{buildroot}/%{_sysconfdir}/elmlink.conf
 %{_libexecdir}/elmlink-lowlevel-send
 %{_unitdir}/elmlink.service
 %config(noreplace) %{_sysconfdir}/elmlink.conf
+%dir %{_sysconfdir}/elmlink.permissions.d
+%{_sysconfdir}/elmlink.permissions.d/README
 
 
 %post

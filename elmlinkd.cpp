@@ -3,11 +3,13 @@
 #include "tty_noncanonical.h"
 #include <dirent.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <list>
 #include <map>
 #include <memory>
+#include <pwd.h>
 #include <set>
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,9 +62,8 @@
 // This directory will have its contents erased, and will be used for client sockets.
 #define CHANNEL_SOCKET_DIR "/var/run/elmlinkd"
 
-// The chmod to apply to newly instantiated channels by default.
-// Since normally the directory permissions will define access, we default to 0777.
-#define CHANNEL_SOCKET_CHMOD 0777
+// The directory to find socket permissions configuration in.
+#define SOCKET_PERM_CONF_DIR "/etc/elmlink.permissions.d/"
 
 class Client {
 public:
@@ -86,6 +87,12 @@ public:
 	}
 };
 
+struct SocketPermissions {
+	uid_t uid;
+	gid_t gid;
+	mode_t mode;
+};
+
 class Channel {
 public:
 	std::string name;
@@ -94,7 +101,7 @@ public:
 	int listenfd;
 	std::list<std::shared_ptr<Client>> clients;
 
-	Channel(int channel_number, std::string name)
+	Channel(int channel_number, std::string name, const struct SocketPermissions &permissions)
 	    : name(name), channel_number(channel_number), listenfd(listenfd) {
 
 		this->listenfd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
@@ -116,7 +123,9 @@ public:
 			throw std::runtime_error("bind() failed");
 		}
 
-		fchmod(this->listenfd, CHANNEL_SOCKET_CHMOD);
+		// fchmod/fchown don't work on sockets, apparently.
+		chown(this->path.c_str(), permissions.uid, permissions.gid);
+		chmod(this->path.c_str(), permissions.mode);
 
 		if (listen(this->listenfd, 1) < 0) {
 			close(listenfd);
@@ -139,9 +148,49 @@ public:
 	Configuration() : uartfd(-1){};
 };
 
+std::map<std::string, struct SocketPermissions> load_permissions_config() {
+	std::map<std::string, struct SocketPermissions> out;
+	DIR *permdir = opendir(SOCKET_PERM_CONF_DIR);
+	if (!permdir)
+		return out;
+
+	struct dirent *file;
+	while (file = readdir(permdir)) {
+		std::string filename = file->d_name;
+		if (filename == "." || filename == "..")
+			continue;
+
+		std::string path = std::string(SOCKET_PERM_CONF_DIR) + filename;
+		FILE *fd = fopen(path.c_str(), "r");
+		char buf[512];
+		while (fgets(buf, sizeof(buf), fd)) {
+			if (buf[0] == '\n' || buf[0] == '\0' || buf[0] == '#')
+				continue; // Skip blank & comment
+			char user[32], group[32];
+			unsigned int mode;
+			int rv = sscanf(buf, " %32s %32s %o ", user, group, &mode);
+			if (rv == 3) {
+				struct passwd *pw = getpwnam(user);
+				struct group *gr = getgrnam(group);
+				if (pw && gr) {
+					struct SocketPermissions perm;
+					perm.uid = pw->pw_uid;
+					perm.gid = pw->pw_gid;
+					perm.mode = mode & 0777;
+					out[filename] = perm;
+				}
+			}
+		}
+		fclose(fd);
+	}
+	closedir(permdir);
+	return out;
+}
+
 void sync_available_channels(Configuration &config, const std::map<uint8_t, std::string> &channel_index) {
 	std::set<uint8_t> known_channel_numbers;
 	std::set<std::string> known_channel_names;
+	std::map<std::string, struct SocketPermissions> permissions = load_permissions_config();
 
 	FILE *indexfile = fopen((std::string(CHANNEL_SOCKET_DIR) + "/.index~").c_str(), "w");
 	if (indexfile >= 0)
@@ -169,7 +218,10 @@ void sync_available_channels(Configuration &config, const std::map<uint8_t, std:
 				fprintf(stderr, "Channel number out of range in sync: %hhu\n", channel_data.first);
 			}
 			else {
-				config.channels.emplace(channel_data.first, std::make_shared<Channel>(channel_data.first, channel_data.second));
+				struct SocketPermissions perm = {.uid = 0, .gid = 0, .mode = 0700};
+				if (permissions.count(channel_data.second))
+					perm = permissions.at(channel_data.second);
+				config.channels.emplace(channel_data.first, std::make_shared<Channel>(channel_data.first, channel_data.second, perm));
 			}
 		}
 	}
@@ -210,6 +262,8 @@ void sync_available_channels(Configuration &config, const std::map<uint8_t, std:
 }
 
 int main(int argc, char *argv[]) {
+	umask(0077); // We don't want to create sockets open to all.  We'll chmod as appropriate.
+
 	Configuration config;
 	if (argc != 3) {
 		fputs("Usage: elmlinkd /dev/ttyUL1 115200\n", stderr);
